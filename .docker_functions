@@ -1,0 +1,174 @@
+#! /bin/bash
+
+docker_sock=${docker_sock:-/var/run/docker.sock}
+
+log_dir=${log_dir:-/var/log${appname:+/}${appname}}
+mkdir -p ${log_dir} 2>/dev/null
+random_key=$(dd status=none count=1 bs=8 if=/dev/urandom | base64)
+
+# if DEBUG is set, then setup for debugging
+#
+if [ -n "${DEBUG}" ]; then
+  log_level=debug
+  exec 2>&-
+  exec 2>>${log_dir}/${appname}.stderr
+  set -x
+fi
+
+get_node_name() { echo ${NODE_NAME:-$(hostname -s)}; }
+get_node_ip() { echo ${NODE_IP:-$(hostname -i)}; }
+
+get_docker_mode() {
+  if [ -z "$(ip -o link show dev docker0 2>/dev/null)" ]; then 
+    echo BRIDGE
+  else
+    echo HOST
+  fi
+}
+
+is_docker_mode_bridge() {
+  [ "$(get_docker_mode)" == "BRIDGE" ] && return 0
+  return 1
+}
+
+is_docker_mode_host() {
+  [ "$(get_docker_mode)" == "HOST" ] && return 0
+  return 1
+}
+
+extract_from_json() { jq $@ | sed -e 's/^"//' -e 's/"$//';  }
+
+info_docker() {
+  local req=${1}
+  local filter=${2}
+  local answer
+
+  # If the docker socket exposed to us (useful for bridge mode) then get information about this container
+  #
+  if [ -S ${docker_sock} ]; then
+    cat <<EOF >/tmp/$$.socat
+GET ${req} HTTP/1.1
+
+EOF
+    answer=$( cat /tmp/$$.socat | socat -T5 unix-connect:${docker_sock} STDIO | grep '^[\[\{]' )
+    [ -n "${answer}" -a -n "${filter}" ] && answer=$(echo ${answer} | extract_from_json ${filter})
+  fi
+
+  echo ${answer}
+}
+
+info_docker_container() {
+  info_docker "/containers/$(get_docker_container_id)/json" "$1"
+}
+
+info_docker_host() {
+  info_docker "/info" "$1"
+}
+
+get_docker_container_id() {
+  cat /proc/mounts | grep " overlay " | tr '=' '\n' | grep overlay | grep /work | sed -e 's~^.*overlay/~~' -e 's~/.*$~~'
+}
+
+get_docker_container_name() {
+  local reply=$(info_docker_container .Name | sed -e 's~^/~~')
+  echo ${reply:-$(get_node_name)}
+}
+
+get_docker_host_ip() {
+  local reply=$(get_node_ip)
+
+  # If we are in BRIDGE mode, try to translate port
+  #
+  if is_docker_mode_bridge; then 
+    local docker_hostname=$( info_docker_host ".Name" )
+    local answer=$(ping -n -c 1 -w 1 ${docker_hostname} | grep ^PING | cut -d\( -f 2 | cut -d\) -f1)
+    reply=${answer:-${reply}}
+  fi
+
+  echo ${reply}
+}
+
+get_docker_container_nat_port() {
+  local port_to_map=${1}
+  local reply=${1}
+
+  # If we are in BRIDGE mode, try to translate port
+  #
+  if is_docker_mode_bridge; then 
+    local answer=$( info_docker_container ".NetworkSettings.Ports[\"${port_to_map}/tcp\"][].HostPort" )
+    reply=${answer:-${reply}}
+  fi
+ 
+  echo ${reply}
+}
+
+get_docker_container_nat_ip() {
+  local port_to_map=${1}
+
+  # The default answer is the docker_host_ip
+  #
+  local reply=$(get_docker_host_ip)
+
+  # If we are in BRIDGE mode, try to translate nat port bind ip
+  #
+  if is_docker_mode_bridge; then 
+    local answer=$( info_docker_container ".NetworkSettings.Ports[\"${port_to_map}/tcp\"][].HostIp" )
+
+    # If we got a bad answer (null/0.0.0.0) skip it
+    #
+    answer=${answer/null/}
+    answer=${answer/0.0.0.0/}
+
+    # if we have a better answer use it
+    #
+    reply=${answer:-${reply}}
+  fi
+
+  echo ${reply}
+}
+
+port_scan_network() {
+  local reply
+
+  # use nmap to find our peers within our network
+  # keep expanding the netmask till we find a peer that might want to talk to us
+  # netmask cannot be wider than 16
+  # base is docker_host_ip till we have a better answer
+  # mask defaults to port_scan_mask if specified, otherwise 24
+  #
+  local port_to_scan=${1}
+  local port_scan_mask=${2}
+  local mask=${2:-24}
+  local base=$(get_docker_host_ip)
+
+  # Calculate netmask if we are in HOST mode
+  #
+  if is_docker_mode_host; then
+    local device=$(ip -o route get 8.8.8.8 | sed -e 's/^.*dev //' -e 's/ .*//')
+    base=$(ip addr show dev ${device} | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+    mask=$(ip addr show dev ${device} | grep "inet " | awk '{print $2}' | cut -d/ -f2)
+  fi
+
+  # if port_scan_mask is "subnet", set it to the subnet_mask for this host
+  # if port_scan_mask is set, use it otherwise set to the subnet mask
+  # If mask_limit is wider than 16, limit to 16
+  # if the subnet mask is wider than the mask_limit change it to the mask_limit
+  #
+  port_scan_mask=${port_scan_mask/subnet/${mask}}
+  mask_limit=${port_scan_mask:-${mask}}
+  [ "${mask_limit}" -lt 16 ] && mask_limit=16
+  [ "${mask}" -lt "${mask_limit}" ] && mask=${mask_limit}
+
+  # While we have no reply and the target mask is narrow'er than the mask_limit
+  #
+  while [ -z "${reply}" -a ${mask} -ge ${mask_limit} ]; do
+    for host in $( nmap --open --send-ip --unprivileged -n -p${port_to_scan} -oG - ${base}/${mask} \
+    | grep "^Host" | grep ${port_to_scan} | awk '{print $2}' ); do
+      reply="${reply}${reply:+ }${host}:${port_to_scan}" 
+    done
+    mask=$((mask-2))
+  done
+
+  echo ${reply}
+}
+
