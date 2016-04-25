@@ -49,8 +49,8 @@ While not technically a "Docker Function" this is used to perform an UNPRIVLEDGE
  
 * port_scan_network(&lt;port to scan&gt; [ ,&lt;subnet mask 16-32&gt; [ ,&lt;IP address to use as base address to scan&gt; ] ] )
 
-- If in docker_host mode, will determine the subnet mask based on the interface used for default route
-- If subnet mask is the string "subnet" will replace it with the discovered subnet mask (done for the case where you dont want to specify a mask and passing an empty parameter causes issues)
-- can scan a specific host by calling port_scan_network &lt;port&gt; 32 &lt;host_ip&gt;
-- values returned from this function is a space seperated list of IP:PORT for each responder discovered
+  - If in docker_host mode, will determine the subnet mask based on the interface used for default route
+  - If subnet mask is the string "subnet" will replace it with the discovered subnet mask (done for the case where you dont want to specify a mask and passing an empty parameter causes issues)
+  - can scan a specific host by calling port_scan_network &lt;port&gt; 32 &lt;host_ip&gt;
+  - values returned from this function is a space seperated list of IP:PORT for each responder discovered
 	
