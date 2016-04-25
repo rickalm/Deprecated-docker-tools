@@ -4,6 +4,12 @@ These bash functions are intended to help determine information about the contai
 
 Most if not all of the functions require access to the docker socket and its default location is /var/run/docker.sock but can be placed anywhere as long as the environment variable DOCKER_SOCKET points to the alternative location
 
+## Environment Variables
+
+* DEBUG - if set, diverts stderr to ${log_dir}/${appname}.stderr and activates bash debugging (set -x)
+* DOCKER_SOCKET - default /var/run/docker.sock
+* NODE_NAME - alternate value for name of docker host
+* NODE_IP - alternate value for docker host IP address
 
 ## "Internal" Functions
 
