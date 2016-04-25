@@ -1,8 +1,10 @@
 #! /bin/bash
 
-docker_sock=${docker_sock:-/var/run/docker.sock}
-
+docker_sock=${DOCKER_SOCKET:-/var/run/docker.sock}
 log_dir=${log_dir:-/var/log${appname:+/}${appname}}
+
+appname=${appname:-unknown}
+
 mkdir -p ${log_dir} 2>/dev/null
 random_key=$(dd status=none count=1 bs=8 if=/dev/urandom | base64)
 
@@ -15,11 +17,20 @@ if [ -n "${DEBUG}" ]; then
   set -x
 fi
 
-get_node_name() { echo ${NODE_NAME:-$(hostname -s)}; }
-get_node_ip() { echo ${NODE_IP:-$(hostname -i)}; }
+extract_from_json() {
+  jq $@ | sed -e 's/^"//' -e 's/"$//';
+}
+
+get_node_name() {
+  echo ${NODE_NAME:-$( hostname -s )};
+}
+
+get_node_ip() {
+  echo ${NODE_IP:-$( hostname -i | awk '{print $1}' )};
+}
 
 get_docker_mode() {
-  if [ -z "$(ip -o link show dev docker0 2>/dev/null)" ]; then 
+  if [ -z "$( ip -o link show dev docker0 2>/dev/null )" ]; then 
     echo BRIDGE
   else
     echo HOST
@@ -36,8 +47,6 @@ is_docker_mode_host() {
   return 1
 }
 
-extract_from_json() { jq $@ | sed -e 's/^"//' -e 's/"$//';  }
-
 info_docker() {
   local req=${1}
   local filter=${2}
@@ -51,6 +60,8 @@ GET ${req} HTTP/1.1
 
 EOF
     answer=$( cat /tmp/$$.socat | socat -T5 unix-connect:${docker_sock} STDIO | grep '^[\[\{]' )
+    rm /tmp/$$.socat
+
     [ -n "${answer}" -a -n "${filter}" ] && answer=$(echo ${answer} | extract_from_json ${filter})
   fi
 
@@ -70,8 +81,9 @@ get_docker_container_id() {
 }
 
 get_docker_container_name() {
-  local reply=$(info_docker_container .Name | sed -e 's~^/~~')
-  echo ${reply:-$(get_node_name)}
+  local reply=$(get_node_ip)
+  local answer=$(info_docker_container .Name | sed -e 's~^/~~')
+  echo ${answer:-${reply}}
 }
 
 get_docker_host_ip() {
