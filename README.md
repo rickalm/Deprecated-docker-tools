@@ -42,14 +42,15 @@ These functions are the most useful to application developers for obtaining info
 These functions will determine the mapped values when running within a bridged container, otherwise will return the values from the host environment
 
 * get_docker_host_ip() - Attempts to resolve the IP address of the Docker Host, otherwise returns the same value as get_node_ip
-* get_docker_container_nat_port(<port to un-nat>) - Will determine the external port that is used to NAT to the internal container port otherwise returns the value passed to it
-* get_docker_container_nat_ip(<port to un-nat>) - If port is natted and if the Nat specifies an alternative interface to bind to it returns that IP address (NAT Bound IP -> Docker Host IP -> Container IP)
+* get_docker_container_nat_port(&lt;port to un-nat&gt;) - Will determine the external port that is used to NAT to the internal container port otherwise returns the value passed to it
+* get_docker_container_nat_ip(&lt;port to un-nat&gt;) - If port is natted and if the Nat specifies an alternative interface to bind to it returns that IP address (NAT Bound IP -> Docker Host IP -> Container IP)
 
 While not technically a "Docker Function" this is used to perform an UNPRIVLEDGED nmap TCP port scan to look for neighbor processes. This was initialy conceived for bringing up a cluster where the cluster leads had no prior knowledge of their peers at boot (AWS autoscale groups are a good example of this)
  
-* port_scan_network(<port to scan>,[ <subnet mask 16-32>,[ <IP address to use as base address to scan> ] ] )
-** If in docker_host mode, will determine the subnet mask based on the interface used for default route
-** If subnet mask is the string "subnet" will replace it with the discovered subnet mask (done for the case where you dont want to specify a mask and passing an empty parameter causes issues)
-** can scan a specific host by calling port_scan_network <port> 32 <host_ip>
-** values returned from this function is a space seperated list of IP:PORT for each responder discovered
+* port_scan_network(&lt;port to scan&gt; [ ,&lt;subnet mask 16-32&gt; [ ,&lt;IP address to use as base address to scan&gt; ] ] )
+
+- If in docker_host mode, will determine the subnet mask based on the interface used for default route
+- If subnet mask is the string "subnet" will replace it with the discovered subnet mask (done for the case where you dont want to specify a mask and passing an empty parameter causes issues)
+- can scan a specific host by calling port_scan_network &lt;port&gt; 32 &lt;host_ip&gt;
+- values returned from this function is a space seperated list of IP:PORT for each responder discovered
 	
