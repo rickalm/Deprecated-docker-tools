@@ -22,6 +22,18 @@ if [ -n "${DEBUG}" ]; then
   log_level=debug
 fi
 
+find_free_port() {
+  # found here http://unix.stackexchange.com/questions/55913/whats-the-easiest-way-to-find-an-unused-local-port
+
+  read LOWERPORT UPPERPORT < /proc/sys/net/ipv4/ip_local_port_range
+  while :
+  do
+          PORT="`shuf -i $LOWERPORT-$UPPERPORT -n 1`"
+          ss -lpn | grep -q ":$PORT " || break
+  done
+  echo $PORT
+}
+
 extract_from_json() {
   jq $@ | sed -e 's/^"//' -e 's/"$//';
 }
